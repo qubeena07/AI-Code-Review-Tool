@@ -1,0 +1,76 @@
+// Prisma schema for code-review-tool
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String       @id @default(cuid())
+  githubId     String       @unique
+  login        String
+  avatarUrl    String
+  accessToken  String
+  createdAt    DateTime     @default(now())
+  repositories Repository[]
+}
+
+model Repository {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  githubRepoId String        @unique
+  fullName     String
+  webhookId    String?
+  active       Boolean       @default(false)
+  pullRequests PullRequest[]
+}
+
+model PullRequest {
+  id           String     @id @default(cuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id])
+  number       Int
+  title        String
+  author       String
+  state        String
+  createdAt    DateTime   @default(now())
+  reviews      Review[]
+}
+
+model Review {
+  id             String          @id @default(cuid())
+  pullRequestId  String
+  pullRequest    PullRequest     @relation(fields: [pullRequestId], references: [id])
+  qualityScore   Int
+  summary        String
+  createdAt      DateTime        @default(now())
+  comments       ReviewComment[]
+  securityIssues SecurityIssue[]
+}
+
+model ReviewComment {
+  id         String @id @default(cuid())
+  reviewId   String
+  review     Review @relation(fields: [reviewId], references: [id])
+  filePath   String
+  lineNumber Int
+  body       String
+  severity   String
+}
+
+model SecurityIssue {
+  id          String @id @default(cuid())
+  reviewId    String
+  review      Review @relation(fields: [reviewId], references: [id])
+  type        String
+  description String
+  filePath    String
+  lineNumber  Int
+  severity    String
+}

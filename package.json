@@ -1,0 +1,16 @@
+{
+  "name": "code-review-tool",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "web",
+    "api",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=web",
+    "dev:api": "npm run dev --workspace=api",
+    "build:web": "npm run build --workspace=web",
+    "build:api": "npm run build --workspace=api"
+  }
+}
