@@ -9,6 +9,8 @@ import { bullBoardRouter } from "./queue/dashboard";
 import authRouter from "./routes/auth";
 import webhookRouter from "./routes/webhook";
 import reposRouter from "./routes/repos";
+import reviewsRouter from "./routes/reviews";
+import analyticsRouter from "./routes/analytics";
 
 const app = express();
 const PORT = process.env.PORT ?? 4000;
@@ -24,6 +26,8 @@ app.use(cookieParser());
 app.use("/admin/queues", bullBoardRouter);
 app.use("/auth", authRouter);
 app.use("/repos", reposRouter);
+app.use("/reviews", reviewsRouter);
+app.use("/analytics", analyticsRouter);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({ message: "Code Review Tool API", status: "ok" });

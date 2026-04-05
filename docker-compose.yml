@@ -1,4 +1,36 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: code_review_tool
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d code_review_tool"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres_shadow:
+    image: postgres:16-alpine
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: code_review_tool_shadow
+    volumes:
+      - postgres_shadow_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d code_review_tool_shadow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     ports:
@@ -13,4 +45,6 @@ services:
       retries: 5
 
 volumes:
+  postgres_data:
+  postgres_shadow_data:
   redis_data:

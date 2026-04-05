@@ -7,6 +7,7 @@ import { reviewCode } from "../services/llm";
 import { mergeReviewResults } from "../services/chunker";
 import { saveReview } from "../services/saveReview";
 import { postReviewToGitHub } from "../services/postReview";
+import { sendSlackNotification, sendEmailNotification } from "../services/notifications";
 
 async function reviewPR(job: Job<ReviewJobData>): Promise<void> {
   const { prNumber, repoFullName, userId } = job.data;
@@ -56,6 +57,15 @@ async function reviewPR(job: Job<ReviewJobData>): Promise<void> {
   console.log(`${jobTag} Posting review to GitHub...`);
   await postReviewToGitHub(token, owner, repo, prNumber, merged);
   console.log(`${jobTag} Posted GitHub review`);
+
+  // 9. Send notifications (fire and forget)
+  const prUrl = `https://github.com/${repoFullName}/pull/${prNumber}`;
+  if (repository.slackWebhookUrl) {
+    sendSlackNotification(repository.slackWebhookUrl, merged, prUrl, prData.title);
+  }
+  if (repository.notificationEmail) {
+    sendEmailNotification(repository.notificationEmail, merged, prUrl, prData.title);
+  }
 }
 
 const worker = new Worker<ReviewJobData>(

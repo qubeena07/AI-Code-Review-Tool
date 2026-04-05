@@ -24,11 +24,13 @@ model Repository {
   id           String        @id @default(cuid())
   userId       String
   user         User          @relation(fields: [userId], references: [id])
-  githubRepoId String        @unique
-  fullName     String
-  webhookId    String?
-  active       Boolean       @default(false)
-  pullRequests PullRequest[]
+  githubRepoId      String        @unique
+  fullName          String
+  webhookId         String?
+  active            Boolean       @default(false)
+  slackWebhookUrl   String?
+  notificationEmail String?
+  pullRequests      PullRequest[]
 }
 
 model PullRequest {
