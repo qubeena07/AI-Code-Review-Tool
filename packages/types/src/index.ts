@@ -46,6 +46,54 @@ export interface ReviewComment {
   createdAt: string;
 }
 
+export interface ChangedFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch: string;
+}
+
+export interface PRData {
+  title: string;
+  author: string;
+  baseBranch: string;
+  headBranch: string;
+  body: string;
+  diff: string;
+  changedFiles: ChangedFile[];
+}
+
+export interface DiffChunk {
+  files: string[];
+  diffChunk: string;
+  estimatedTokens: number;
+}
+
+export interface ReviewSuggestion {
+  filePath: string;
+  lineNumber: number;
+  severity: "SUGGESTION" | "WARNING";
+  body: string;
+}
+
+export interface ReviewSecurityIssue {
+  filePath: string;
+  lineNumber: number;
+  type: string;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  description: string;
+  recommendation: string;
+}
+
+export interface ReviewResult {
+  qualityScore: number;
+  summary: string;
+  suggestions: ReviewSuggestion[];
+  securityIssues: ReviewSecurityIssue[];
+  positives: string[];
+}
+
 export interface ApiResponse<T> {
   data: T;
   message?: string;
