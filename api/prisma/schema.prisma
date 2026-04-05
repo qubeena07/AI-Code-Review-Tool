@@ -1,6 +1,3 @@
-// Prisma schema for code-review-tool
-// https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -21,37 +18,39 @@ model User {
 }
 
 model Repository {
-  id           String        @id @default(cuid())
-  userId       String
-  user         User          @relation(fields: [userId], references: [id])
+  id                String        @id @default(cuid())
+  userId            String
   githubRepoId      String        @unique
   fullName          String
   webhookId         String?
   active            Boolean       @default(false)
-  slackWebhookUrl   String?
   notificationEmail String?
+  slackWebhookUrl   String?
   pullRequests      PullRequest[]
+  user              User          @relation(fields: [userId], references: [id])
 }
 
 model PullRequest {
   id           String     @id @default(cuid())
   repositoryId String
-  repository   Repository @relation(fields: [repositoryId], references: [id])
   number       Int
   title        String
   author       String
   state        String
   createdAt    DateTime   @default(now())
+  repository   Repository @relation(fields: [repositoryId], references: [id])
   reviews      Review[]
+
+  @@unique([repositoryId, number])
 }
 
 model Review {
   id             String          @id @default(cuid())
   pullRequestId  String
-  pullRequest    PullRequest     @relation(fields: [pullRequestId], references: [id])
   qualityScore   Int
   summary        String
   createdAt      DateTime        @default(now())
+  pullRequest    PullRequest     @relation(fields: [pullRequestId], references: [id])
   comments       ReviewComment[]
   securityIssues SecurityIssue[]
 }
@@ -59,20 +58,20 @@ model Review {
 model ReviewComment {
   id         String @id @default(cuid())
   reviewId   String
-  review     Review @relation(fields: [reviewId], references: [id])
   filePath   String
   lineNumber Int
   body       String
   severity   String
+  review     Review @relation(fields: [reviewId], references: [id])
 }
 
 model SecurityIssue {
   id          String @id @default(cuid())
   reviewId    String
-  review      Review @relation(fields: [reviewId], references: [id])
   type        String
   description String
   filePath    String
   lineNumber  Int
   severity    String
+  review      Review @relation(fields: [reviewId], references: [id])
 }

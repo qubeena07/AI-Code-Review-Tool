@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { Worker, Job } from "bullmq";
 import { connection, ReviewJobData } from "./index";
 import { prisma } from "../lib/prisma";
@@ -8,6 +9,11 @@ import { mergeReviewResults } from "../services/chunker";
 import { saveReview } from "../services/saveReview";
 import { postReviewToGitHub } from "../services/postReview";
 import { sendSlackNotification, sendEmailNotification } from "../services/notifications";
+import { logger } from "../middleware/logger";
+
+interface QuotaError extends Error {
+  retryAfter?: number;
+}
 
 async function reviewPR(job: Job<ReviewJobData>): Promise<void> {
   const { prNumber, repoFullName, userId } = job.data;
@@ -28,35 +34,43 @@ async function reviewPR(job: Job<ReviewJobData>): Promise<void> {
   if (!pullRequest) throw new Error(`${jobTag} PullRequest #${prNumber} not found in DB`);
 
   // 3. Fetch PR data from GitHub
-  console.log(`${jobTag} Fetching PR data from GitHub...`);
+  logger.info({ jobTag }, "Fetching PR data from GitHub");
   const [owner, repo] = repoFullName.split("/");
   const prData = await fetchPRData(token, owner, repo, prNumber);
-  console.log(`${jobTag} Fetched: "${prData.title}", ${prData.changedFiles.length} files, diff ${prData.diff.length} chars`);
+  logger.info(
+    { jobTag, title: prData.title, files: prData.changedFiles.length, diffLen: prData.diff.length },
+    "PR data fetched"
+  );
 
   // 4. Chunk the diff
   const chunks = chunkDiff(prData.diff);
-  console.log(`${jobTag} Split into ${chunks.length} chunk(s)`);
+  logger.info({ jobTag, chunks: chunks.length }, "Diff chunked");
 
   // 5. Review each chunk
   const chunkResults = [];
   for (let i = 0; i < chunks.length; i++) {
-    console.log(`${jobTag} Reviewing chunk ${i + 1}/${chunks.length} (~${chunks[i].estimatedTokens} tokens)...`);
+    logger.info(
+      { jobTag, chunk: i + 1, total: chunks.length, tokens: chunks[i].estimatedTokens },
+      "Reviewing chunk"
+    );
     const result = await reviewCode(chunks[i].diffChunk);
     chunkResults.push(result);
   }
 
   // 6. Merge results
   const merged = mergeReviewResults(chunkResults);
-  console.log(`${jobTag} Merged results: score=${merged.qualityScore}, suggestions=${merged.suggestions.length}, securityIssues=${merged.securityIssues.length}`);
+  logger.info(
+    { jobTag, score: merged.qualityScore, suggestions: merged.suggestions.length, security: merged.securityIssues.length },
+    "Review merged"
+  );
 
   // 7. Persist to DB
   const review = await saveReview(pullRequest.id, merged, prisma);
-  console.log(`${jobTag} Saved review id=${review.id}`);
+  logger.info({ jobTag, reviewId: review.id }, "Review saved");
 
   // 8. Post review to GitHub
-  console.log(`${jobTag} Posting review to GitHub...`);
   await postReviewToGitHub(token, owner, repo, prNumber, merged);
-  console.log(`${jobTag} Posted GitHub review`);
+  logger.info({ jobTag }, "GitHub review posted");
 
   // 9. Send notifications (fire and forget)
   const prUrl = `https://github.com/${repoFullName}/pull/${prNumber}`;
@@ -71,8 +85,22 @@ async function reviewPR(job: Job<ReviewJobData>): Promise<void> {
 const worker = new Worker<ReviewJobData>(
   "review-queue",
   async (job: Job<ReviewJobData>) => {
-    console.log(`[worker] Processing PR #${job.data.prNumber} from repo ${job.data.repoFullName}`);
-    await reviewPR(job);
+    logger.info(
+      { prNumber: job.data.prNumber, repo: job.data.repoFullName },
+      "[worker] Processing PR"
+    );
+    try {
+      await reviewPR(job);
+    } catch (err) {
+      const quotaErr = err as QuotaError;
+      if (quotaErr.message === "GEMINI_QUOTA_EXCEEDED") {
+        const delay = quotaErr.retryAfter ?? 60_000;
+        logger.warn({ delay, jobId: job.id }, "[worker] Gemini quota hit — moving job to delayed");
+        await job.moveToDelayed(Date.now() + delay);
+        return;
+      }
+      throw err;
+    }
   },
   {
     connection,
@@ -81,23 +109,26 @@ const worker = new Worker<ReviewJobData>(
 );
 
 worker.on("completed", (job: Job<ReviewJobData>) => {
-  console.log(`[worker] Job ${job.id} completed — PR #${job.data.prNumber}`);
+  logger.info({ jobId: job.id, prNumber: job.data.prNumber }, "[worker] Job completed");
 });
 
 worker.on("failed", (job: Job<ReviewJobData> | undefined, err: Error) => {
-  console.error(`[worker] Job ${job?.id ?? "unknown"} failed — PR #${job?.data.prNumber ?? "?"}: ${err.message}`);
+  logger.error(
+    { jobId: job?.id, prNumber: job?.data.prNumber, err: err.message },
+    "[worker] Job failed"
+  );
 });
 
 worker.on("error", (err: Error) => {
-  console.error("[worker] Worker error:", err.message);
+  logger.error({ err: err.message }, "[worker] Worker error");
 });
 
 process.on("SIGTERM", async () => {
-  console.log("[worker] SIGTERM received — shutting down gracefully");
+  logger.info("[worker] SIGTERM received — shutting down gracefully");
   await worker.close();
   process.exit(0);
 });
 
-console.log("[worker] Review worker started, waiting for jobs...");
+logger.info("[worker] Review worker started, waiting for jobs...");
 
 export default worker;

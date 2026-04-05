@@ -1,31 +1,53 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, GoogleGenerativeAIError } from "@google/generative-ai";
 import type { ReviewResult } from "@code-review-tool/types";
 import { REVIEW_SYSTEM_PROMPT } from "./prompts";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+import { logger } from "../middleware/logger";
 
 export async function reviewCode(diffChunk: string): Promise<ReviewResult> {
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: REVIEW_SYSTEM_PROMPT,
-  });
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-  const response = await model.generateContent(
-    "Review this pull request diff:\n\n" + diffChunk
-  );
-
-  const text = response.response.text();
-
-  // Strip markdown code fences if the model wraps output anyway
-  const cleaned = text.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
-
-  let result: ReviewResult;
   try {
-    result = JSON.parse(cleaned) as ReviewResult;
-  } catch {
-    console.error("[llm] Raw LLM output that failed to parse:\n", text);
-    throw new Error("LLM returned invalid JSON");
-  }
+    const result = await model.generateContent([
+      { text: REVIEW_SYSTEM_PROMPT },
+      { text: "Review this pull request diff:\n\n" + diffChunk },
+    ]);
 
-  return result;
+    const text = result.response.text();
+    const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+
+    try {
+      return JSON.parse(cleaned) as ReviewResult;
+    } catch {
+      logger.error({ rawOutput: text }, "LLM returned invalid JSON");
+      throw new Error("LLM returned invalid JSON");
+    }
+  } catch (err) {
+    if (err instanceof GoogleGenerativeAIError) {
+      // Gemini quota exceeded (429) — signal worker to delay and retry
+      if (err.message.includes("429") || err.message.includes("quota")) {
+        const retryAfter = 60_000;
+        logger.warn({ retryAfter }, "Gemini quota exceeded, will retry after delay");
+        throw Object.assign(new Error("GEMINI_QUOTA_EXCEEDED"), { retryAfter });
+      }
+
+      // Safety block — Gemini refused the content
+      if (err.message.includes("SAFETY")) {
+        logger.warn("Gemini blocked content due to safety filters — returning default review");
+        return {
+          qualityScore: 5,
+          summary: "Review unavailable: content filtered.",
+          suggestions: [],
+          securityIssues: [],
+          positives: [],
+        };
+      }
+    }
+
+    // Re-throw if it's already our quota error
+    if ((err as Error).message === "GEMINI_QUOTA_EXCEEDED") throw err;
+
+    logger.error({ err }, "Gemini API error");
+    throw new Error("LLM review failed: " + (err as Error).message);
+  }
 }

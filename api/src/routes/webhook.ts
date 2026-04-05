@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { createHmac, timingSafeEqual } from "crypto";
 import { reviewQueue } from "../queue/index";
+import { prisma } from "../lib/prisma";
 
 const router = Router();
 
@@ -84,7 +85,21 @@ router.post(
       ? ((repo.owner as Record<string, unknown>).login as string)
       : "unknown";
 
-    // 5. Enqueue review job
+    // 5. Ensure Repository and PullRequest records exist in the DB
+    const repoRecord = await prisma.repository.findFirst({ where: { fullName: repoFullName } });
+    if (!repoRecord) {
+      console.warn(`[webhook] Repository "${repoFullName}" not found in DB — skipping job`);
+      res.status(200).json({ received: true, queued: false, reason: "repository not registered" });
+      return;
+    }
+
+    await prisma.pullRequest.upsert({
+      where: { repositoryId_number: { repositoryId: repoRecord.id, number: prNumber } },
+      update: { title: prTitle, author, state: "open" },
+      create: { repositoryId: repoRecord.id, number: prNumber, title: prTitle, author, state: "open" },
+    });
+
+    // 6. Enqueue review job
     await reviewQueue.add(
       `review-pr-${repoFullName}-${prNumber}`,
       { prNumber, repoFullName, diffUrl, userId },

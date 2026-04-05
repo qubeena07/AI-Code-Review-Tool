@@ -1,0 +1,12 @@
+[build]
+builder = "nixpacks"
+
+[[services]]
+name = "api"
+startCommand = "node dist/index.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 10
+
+[[services]]
+name = "worker"
+startCommand = "node dist/queue/worker.js"

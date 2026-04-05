@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { ReviewResult, ReviewComment } from "@code-review-tool/types";
+import type { ReviewResult } from "@code-review-tool/types";
 
 const ghApi = axios.create({
   baseURL: "https://api.github.com",
@@ -88,10 +88,9 @@ export async function postReviewToGitHub(
   }
 
   // 3. Determine review event from quality score
-  let event: "APPROVE" | "COMMENT" | "REQUEST_CHANGES";
-  if (review.qualityScore >= 8) {
-    event = "APPROVE";
-  } else if (review.qualityScore >= 6) {
+  // Never use APPROVE — GitHub rejects self-reviews with 422
+  let event: "COMMENT" | "REQUEST_CHANGES";
+  if (review.qualityScore >= 6) {
     event = "COMMENT";
   } else {
     event = "REQUEST_CHANGES";
